@@ -40,3 +40,4 @@ Four crates in `crates/`:
 - **No unused code warnings**: Keep imports clean. Remove `BackupAction::Failed` and similar dead variants rather than leaving them.
 - **Update README.md** when adding features or changing usage.
 - **Stage changes but let the user commit.**
+- **Granular commits**: Prefer small, focused commits (one logical change per commit) over large bundled commits. For example, separate "add exclude filtering" from "add signal handling" from "add CLI tests".
