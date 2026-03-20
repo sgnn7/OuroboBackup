@@ -9,7 +9,7 @@ Cross-platform file backup tool that watches directories and copies changed file
 - **ourobo-cli** — command-line client to control the daemon
 - **ourobo-gui** — egui-based graphical client
 
-The daemon runs in the background and communicates with CLI/GUI clients via IPC (Unix domain socket on macOS/Linux, named pipe on Windows).
+The daemon runs in the background and communicates with CLI/GUI clients via IPC (Unix domain socket on macOS/Linux, named pipe on Windows). It handles SIGINT, SIGTERM, and IPC shutdown commands for graceful shutdown with socket cleanup.
 
 ## Backup Strategy
 
@@ -20,13 +20,23 @@ Currently implements **copy-on-change**: files are copied to the target immediat
 - **Local filesystem** — copies to a local or mounted directory
 - **SMB** — planned (pure Rust via smb-rs)
 
+## Features
+
+- File watching with configurable debounce (via `notify`)
+- Glob-based exclude patterns (e.g., `*.tmp`, `.DS_Store`, `target/**`)
+- Daemon + thin-client architecture with IPC
+- CLI and GUI clients
+- TOML configuration
+- Graceful shutdown (SIGINT, SIGTERM, IPC shutdown command)
+- Path traversal protection in local filesystem backend
+
 ## Quick Start
 
 ```bash
 # Build all crates
 cargo build --workspace
 
-# Run tests
+# Run tests (55 tests)
 cargo test --workspace
 
 # Start the daemon (requires config at ~/.config/ourobo/config.toml)
@@ -38,6 +48,7 @@ cargo run -p ourobo-cli -- status
 cargo run -p ourobo-cli -- add --id docs --label "Documents" --source ~/Documents --target /backup/Documents
 cargo run -p ourobo-cli -- list
 cargo run -p ourobo-cli -- remove docs
+cargo run -p ourobo-cli -- shutdown
 
 # GUI (connects to running daemon)
 cargo run -p ourobo-gui
@@ -53,6 +64,7 @@ The graphical interface connects to a running daemon and provides:
 - Add Watch dialog (ID, label, source path, target path)
 - Confirmation dialogs for destructive actions
 - Auto-refresh every 2 seconds
+- Toast notifications with auto-dismiss
 
 ## Configuration
 
@@ -68,7 +80,7 @@ log_level = "info"
 id = "documents"
 label = "My Documents"
 source = "/Users/you/Documents"
-exclude = ["*.tmp", ".DS_Store"]
+exclude = ["*.tmp", ".DS_Store", "Thumbs.db"]
 enabled = true
 
 [watches.target]
@@ -78,14 +90,41 @@ path = "/Volumes/Backup/Documents"
 
 See `config.example.toml` for a full example.
 
+### Exclude Patterns
+
+Watches support glob-based exclude patterns. Patterns are matched against both the filename and the relative path from the watch source:
+
+- `*.tmp` — exclude all `.tmp` files
+- `.DS_Store` — exclude by exact filename
+- `target/**` — exclude an entire directory tree
+- `node_modules/**` — exclude nested dependency directories
+
+## CLI Reference
+
+| Command | Description |
+|---|---|
+| `ourobo ping` | Check if daemon is running |
+| `ourobo status` | Show daemon uptime, watch count, files backed up |
+| `ourobo list` | List all watches with status |
+| `ourobo add --id ID --label LABEL --source PATH --target PATH` | Add a new watch |
+| `ourobo remove ID` | Remove a watch |
+| `ourobo enable ID` | Enable a watch |
+| `ourobo disable ID` | Disable a watch |
+| `ourobo backup ID` | Trigger immediate backup |
+| `ourobo reload` | Reload daemon configuration |
+| `ourobo shutdown` | Shut down daemon gracefully |
+
+Use `--socket PATH` or `OUROBO_SOCKET` env var to specify a custom daemon socket path.
+
 ## Development
 
 ```bash
-# Run all tests
+# Run all tests (55 across workspace)
 cargo test --workspace
 
 # Run tests for a specific crate
 cargo test -p ourobo-core
+cargo test -p ourobo-cli
 
 # Check without building
 cargo check --workspace
