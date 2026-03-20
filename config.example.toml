@@ -1,0 +1,15 @@
+[daemon]
+ipc_path = "~/.ourobo/ourobo.sock"
+debounce_ms = 500
+log_level = "info"
+
+[[watches]]
+id = "documents"
+label = "My Documents"
+source = "/Users/you/Documents"
+exclude = ["*.tmp", ".DS_Store", "Thumbs.db"]
+enabled = true
+
+[watches.target]
+type = "local"
+path = "/Volumes/Backup/Documents"

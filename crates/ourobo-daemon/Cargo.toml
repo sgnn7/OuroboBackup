@@ -1,0 +1,11 @@
+[package]
+name = "ourobo-daemon"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ourobo-core = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
