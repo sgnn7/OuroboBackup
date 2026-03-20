@@ -2,10 +2,52 @@ use crate::backend::BackupBackend;
 use crate::config::WatchConfig;
 use crate::strategy::BackupStrategy;
 use crate::watcher::FileWatcher;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+fn build_exclude_set(patterns: &[String]) -> crate::Result<GlobSet> {
+    let mut builder = GlobSetBuilder::new();
+    for pattern in patterns {
+        let glob = Glob::new(pattern).map_err(|e| {
+            crate::OuroboError::Config(format!("invalid exclude pattern \"{pattern}\": {e}"))
+        })?;
+        builder.add(glob);
+    }
+    builder
+        .build()
+        .map_err(|e| crate::OuroboError::Config(format!("failed to build exclude set: {e}")))
+}
+
+fn is_excluded(path: &Path, watch_root: &Path, exclude_set: &GlobSet) -> bool {
+    if exclude_set.is_empty() {
+        return false;
+    }
+    // Match against the relative path and the filename
+    match path.strip_prefix(watch_root) {
+        Ok(relative) => {
+            if exclude_set.is_match(relative) {
+                return true;
+            }
+        }
+        Err(_) => {
+            tracing::debug!(
+                "event path {} not under watch root {}, skipping relative exclude check",
+                path.display(),
+                watch_root.display()
+            );
+        }
+    }
+    if let Some(name) = path.file_name() {
+        if exclude_set.is_match(name) {
+            return true;
+        }
+    }
+    false
+}
 
 pub struct WatchStats {
     pub files_backed_up: AtomicU64,
@@ -58,6 +100,7 @@ impl BackupEngine {
         let source = config.source.clone();
         let strategy = self.strategy.clone();
         let task_stats = stats.clone();
+        let exclude_set = build_exclude_set(&config.exclude)?;
 
         let (watcher, mut rx) = FileWatcher::start(source.clone(), debounce_ms)?;
 
@@ -70,6 +113,10 @@ impl BackupEngine {
                     event = rx.recv() => {
                         match event {
                             Some(file_event) => {
+                                if is_excluded(file_event.path(), &source, &exclude_set) {
+                                    tracing::trace!("excluded: {}", file_event.path().display());
+                                    continue;
+                                }
                                 match strategy.handle_event(&file_event, &source, backend.as_ref()).await {
                                     Ok(result) => {
                                         if result.action == crate::strategy::BackupAction::Copied
@@ -140,6 +187,7 @@ mod tests {
     use super::*;
     use crate::backend::local::LocalFsBackend;
     use crate::strategy::copy_on_change::CopyOnChange;
+    use std::path::PathBuf;
 
     fn make_engine() -> BackupEngine {
         BackupEngine::new(Arc::new(CopyOnChange))
@@ -208,5 +256,62 @@ mod tests {
         let config2 = make_watch_config("dup", src_dir.path());
         let result = engine.add_watch(config2, backend, 100);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_exclude_set() {
+        let set = build_exclude_set(&[
+            "*.tmp".to_string(),
+            ".DS_Store".to_string(),
+        ])
+        .unwrap();
+        assert!(set.is_match("foo.tmp"));
+        assert!(set.is_match(".DS_Store"));
+        assert!(!set.is_match("file.txt"));
+    }
+
+    #[test]
+    fn test_build_exclude_set_empty() {
+        let set = build_exclude_set(&[]).unwrap();
+        assert!(!set.is_match("anything"));
+    }
+
+    #[test]
+    fn test_build_exclude_set_invalid_pattern() {
+        let result = build_exclude_set(&["[invalid".to_string()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_excluded_by_filename() {
+        let set = build_exclude_set(&["*.tmp".to_string(), ".DS_Store".to_string()]).unwrap();
+        let root = PathBuf::from("/watch");
+
+        assert!(is_excluded(Path::new("/watch/foo.tmp"), &root, &set));
+        assert!(is_excluded(Path::new("/watch/sub/.DS_Store"), &root, &set));
+        assert!(!is_excluded(Path::new("/watch/file.txt"), &root, &set));
+    }
+
+    #[test]
+    fn test_is_excluded_by_relative_path() {
+        let set = build_exclude_set(&["target/**".to_string()]).unwrap();
+        let root = PathBuf::from("/project");
+
+        assert!(is_excluded(
+            Path::new("/project/target/debug/bin"),
+            &root,
+            &set
+        ));
+        assert!(!is_excluded(Path::new("/project/src/main.rs"), &root, &set));
+    }
+
+    #[test]
+    fn test_is_excluded_empty_set() {
+        let set = build_exclude_set(&[]).unwrap();
+        assert!(!is_excluded(
+            Path::new("/watch/anything"),
+            Path::new("/watch"),
+            &set
+        ));
     }
 }

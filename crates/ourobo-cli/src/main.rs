@@ -110,6 +110,12 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+fn parse_cli(args: &[&str]) -> Cli {
+    use clap::Parser;
+    Cli::parse_from(args)
+}
+
 fn print_response(data: ResponseData) {
     match data {
         ResponseData::Pong => println!("Pong"),
@@ -145,5 +151,100 @@ fn print_response(data: ResponseData) {
         ResponseData::ConfigReloaded => println!("Config reloaded."),
         ResponseData::ShuttingDown => println!("Daemon shutting down."),
         ResponseData::Empty => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ping() {
+        let cli = parse_cli(&["ourobo", "ping"]);
+        assert!(matches!(cli.command, Commands::Ping));
+        assert!(cli.socket.is_none());
+    }
+
+    #[test]
+    fn test_parse_status() {
+        let cli = parse_cli(&["ourobo", "status"]);
+        assert!(matches!(cli.command, Commands::Status));
+    }
+
+    #[test]
+    fn test_parse_add() {
+        let cli = parse_cli(&[
+            "ourobo", "add", "--id", "docs", "--label", "Documents",
+            "--source", "/home/user/docs", "--target", "/backup/docs",
+        ]);
+        match cli.command {
+            Commands::Add { id, label, source, target } => {
+                assert_eq!(id, "docs");
+                assert_eq!(label, "Documents");
+                assert_eq!(source, PathBuf::from("/home/user/docs"));
+                assert_eq!(target, PathBuf::from("/backup/docs"));
+            }
+            _ => panic!("expected Add command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_remove() {
+        let cli = parse_cli(&["ourobo", "remove", "my-watch"]);
+        match cli.command {
+            Commands::Remove { id } => assert_eq!(id, "my-watch"),
+            _ => panic!("expected Remove"),
+        }
+    }
+
+    #[test]
+    fn test_parse_list() {
+        let cli = parse_cli(&["ourobo", "list"]);
+        assert!(matches!(cli.command, Commands::List));
+    }
+
+    #[test]
+    fn test_parse_enable() {
+        let cli = parse_cli(&["ourobo", "enable", "w1"]);
+        match cli.command {
+            Commands::Enable { id } => assert_eq!(id, "w1"),
+            _ => panic!("expected Enable"),
+        }
+    }
+
+    #[test]
+    fn test_parse_disable() {
+        let cli = parse_cli(&["ourobo", "disable", "w1"]);
+        match cli.command {
+            Commands::Disable { id } => assert_eq!(id, "w1"),
+            _ => panic!("expected Disable"),
+        }
+    }
+
+    #[test]
+    fn test_parse_backup() {
+        let cli = parse_cli(&["ourobo", "backup", "w1"]);
+        match cli.command {
+            Commands::Backup { id } => assert_eq!(id, "w1"),
+            _ => panic!("expected Backup"),
+        }
+    }
+
+    #[test]
+    fn test_parse_shutdown() {
+        let cli = parse_cli(&["ourobo", "shutdown"]);
+        assert!(matches!(cli.command, Commands::Shutdown));
+    }
+
+    #[test]
+    fn test_parse_with_socket() {
+        let cli = parse_cli(&["ourobo", "--socket", "/tmp/test.sock", "ping"]);
+        assert_eq!(cli.socket, Some(PathBuf::from("/tmp/test.sock")));
+    }
+
+    #[test]
+    fn test_parse_reload() {
+        let cli = parse_cli(&["ourobo", "reload"]);
+        assert!(matches!(cli.command, Commands::Reload));
     }
 }
