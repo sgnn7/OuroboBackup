@@ -5,6 +5,7 @@ members = [
     "crates/ourobo-daemon",
     "crates/ourobo-cli",
     "crates/ourobo-gui",
+    "crates/ourobo-tray",
 ]
 
 [workspace.package]
@@ -32,5 +33,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "5"
 globset = "0.4"
 async-trait = "0.1"
+tray-icon = "0.19"
+muda = "0.15"
 tempfile = "3"
 mockall = "0.13"
