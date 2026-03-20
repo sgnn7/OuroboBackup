@@ -51,10 +51,13 @@ OuroboBackup/
 │   ├── ourobo-cli/          # CLI thin client binary
 │   │   └── src/
 │   │       └── main.rs
-│   └── ourobo-gui/          # egui GUI thin client binary
+│   ├── ourobo-gui/          # egui GUI thin client binary
+│   │   └── src/
+│   │       ├── main.rs
+│   │       └── app.rs
+│   └── ourobo-tray/         # macOS menu bar tray icon
 │       └── src/
-│           ├── main.rs
-│           └── app.rs
+│           └── main.rs
 ```
 
 ## Key Dependencies
@@ -72,6 +75,7 @@ OuroboBackup/
 | `dirs` | Cross-platform config/home dirs |
 | `globset` | Exclude pattern matching |
 | `async-trait` | Async trait support |
+| `tray-icon` + `muda` | System tray icon and menu |
 | `tempfile`, `mockall` | Testing |
 
 ## Core Traits

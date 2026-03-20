@@ -8,6 +8,7 @@ Cross-platform file backup tool that watches directories and copies changed file
 - **ourobo-daemon** — background daemon that watches files and performs backups
 - **ourobo-cli** — command-line client to control the daemon
 - **ourobo-gui** — egui-based graphical client
+- **ourobo-tray** — macOS menu bar tray icon (via `tray-icon`)
 
 The daemon runs in the background and communicates with CLI/GUI clients via IPC (Unix domain socket on macOS/Linux, named pipe on Windows). It handles SIGINT, SIGTERM, and IPC shutdown commands for graceful shutdown with socket cleanup.
 
@@ -25,7 +26,7 @@ Currently implements **copy-on-change**: files are copied to the target immediat
 - File watching with configurable debounce (via `notify`)
 - Glob-based exclude patterns (e.g., `*.tmp`, `.DS_Store`, `target/**`)
 - Daemon + thin-client architecture with IPC
-- CLI and GUI clients
+- CLI, GUI, and system tray clients
 - TOML configuration
 - Graceful shutdown (SIGINT, SIGTERM, IPC shutdown command)
 - Path traversal protection in local filesystem backend
@@ -52,6 +53,9 @@ cargo run -p ourobo-cli -- shutdown
 
 # GUI (connects to running daemon)
 cargo run -p ourobo-gui
+
+# System tray icon (macOS menu bar)
+cargo run -p ourobo-tray
 ```
 
 ## GUI
@@ -65,6 +69,16 @@ The graphical interface connects to a running daemon and provides:
 - Confirmation dialogs for destructive actions
 - Auto-refresh every 2 seconds
 - Toast notifications with auto-dismiss
+
+## System Tray
+
+The system tray app (`ourobo-tray`) sits in the macOS menu bar and provides:
+
+- Green status icon indicating the daemon is reachable
+- Live status display (watch count, files backed up)
+- Quick access to launch the GUI
+- Quit option
+- Polls daemon status every 5 seconds via IPC
 
 ## Configuration
 
