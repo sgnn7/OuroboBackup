@@ -1,0 +1,11 @@
+[package]
+name = "ourobo-tray"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ourobo-core = { workspace = true }
+tray-icon = { workspace = true }
+muda = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
