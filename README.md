@@ -39,9 +39,20 @@ cargo run -p ourobo-cli -- add --id docs --label "Documents" --source ~/Document
 cargo run -p ourobo-cli -- list
 cargo run -p ourobo-cli -- remove docs
 
-# GUI
+# GUI (connects to running daemon)
 cargo run -p ourobo-gui
 ```
+
+## GUI
+
+The graphical interface connects to a running daemon and provides:
+
+- Connection status indicator with configurable socket path
+- Live daemon status (uptime, active watches, files backed up)
+- Watch list with per-watch controls (backup now, remove)
+- Add Watch dialog (ID, label, source path, target path)
+- Confirmation dialogs for destructive actions
+- Auto-refresh every 2 seconds
 
 ## Configuration
 
