@@ -16,3 +16,5 @@ eframe = { workspace = true }
 egui = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+rfd = { workspace = true }
+uuid = { workspace = true }
