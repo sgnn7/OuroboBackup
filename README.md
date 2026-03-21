@@ -130,6 +130,17 @@ Watches support glob-based exclude patterns. Patterns are matched against both t
 
 Use `--socket PATH` or `OUROBO_SOCKET` env var to specify a custom daemon socket path.
 
+## Packaging (macOS)
+
+```bash
+# Build a .dmg containing all binaries, config example, and .app bundles
+./scripts/build-dmg.sh
+```
+
+Output: `target/OuroboBackup-0.1.0.dmg`
+
+The script builds release binaries, optionally creates `.app` bundles via `cargo-bundle` (install with `cargo install cargo-bundle`), and packages everything into a compressed DMG using `hdiutil`.
+
 ## Development
 
 ```bash
