@@ -14,5 +14,6 @@ osx_minimum_system_version = "10.15"
 ourobo-core = { workspace = true }
 tray-icon = { workspace = true }
 muda = { workspace = true }
+tao = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
