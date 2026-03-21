@@ -3,6 +3,13 @@ name = "ourobo-tray"
 version.workspace = true
 edition.workspace = true
 
+[package.metadata.bundle]
+name = "OuroboBackup Tray"
+identifier = "com.ourobo.tray"
+category = "public.app-category.utilities"
+short_description = "OuroboBackup menu bar icon"
+osx_minimum_system_version = "10.15"
+
 [dependencies]
 ourobo-core = { workspace = true }
 tray-icon = { workspace = true }

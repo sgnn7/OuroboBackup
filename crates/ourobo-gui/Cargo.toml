@@ -3,6 +3,13 @@ name = "ourobo-gui"
 version.workspace = true
 edition.workspace = true
 
+[package.metadata.bundle]
+name = "OuroboBackup"
+identifier = "com.ourobo.backup"
+category = "public.app-category.utilities"
+short_description = "File backup tool"
+osx_minimum_system_version = "10.15"
+
 [dependencies]
 ourobo-core = { workspace = true }
 eframe = { workspace = true }
