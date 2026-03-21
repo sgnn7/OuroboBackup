@@ -35,7 +35,6 @@ enum DaemonReply {
 }
 
 struct AddWatchForm {
-    id: String,
     label: String,
     source: String,
     target: String,
@@ -44,7 +43,6 @@ struct AddWatchForm {
 impl AddWatchForm {
     fn new() -> Self {
         Self {
-            id: String::new(),
             label: String::new(),
             source: String::new(),
             target: String::new(),
@@ -52,7 +50,6 @@ impl AddWatchForm {
     }
 
     fn clear(&mut self) {
-        self.id.clear();
         self.label.clear();
         self.source.clear();
         self.target.clear();
@@ -226,7 +223,6 @@ impl OuroboApp {
                     let status_color = if w.is_watching { COLOR_OK } else { COLOR_IDLE };
                     ui.colored_label(status_color, "●");
                     ui.strong(&w.config.label);
-                    ui.label(format!("({})", w.config.id));
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Remove").clicked() {
@@ -266,37 +262,61 @@ impl OuroboApp {
             .resizable(false)
             .show(ctx, |ui| {
                 egui::Grid::new("add_watch_grid").show(ui, |ui| {
-                    ui.label("ID:");
-                    ui.text_edit_singleline(&mut self.add_form.id);
-                    ui.end_row();
-
-                    ui.label("Label:");
+                    ui.label("Name (optional):");
                     ui.text_edit_singleline(&mut self.add_form.label);
                     ui.end_row();
 
                     ui.label("Source:");
-                    ui.text_edit_singleline(&mut self.add_form.source);
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.add_form.source);
+                        if ui.button("Browse…").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .set_title("Select source directory")
+                                .pick_folder()
+                            {
+                                self.add_form.source = path.to_string_lossy().to_string();
+                            }
+                        }
+                    });
                     ui.end_row();
 
                     ui.label("Target:");
-                    ui.text_edit_singleline(&mut self.add_form.target);
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.add_form.target);
+                        if ui.button("Browse…").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .set_title("Select target directory")
+                                .pick_folder()
+                            {
+                                self.add_form.target = path.to_string_lossy().to_string();
+                            }
+                        }
+                    });
                     ui.end_row();
                 });
 
                 ui.separator();
                 ui.horizontal(|ui| {
-                    let can_add = !self.add_form.id.is_empty()
-                        && !self.add_form.source.is_empty()
+                    let can_add = !self.add_form.source.is_empty()
                         && !self.add_form.target.is_empty();
 
                     if ui.add_enabled(can_add, egui::Button::new("Add")).clicked() {
+                        let label = if self.add_form.label.trim().is_empty() {
+                            let src_name = std::path::Path::new(&self.add_form.source)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| self.add_form.source.clone());
+                            let tgt_name = std::path::Path::new(&self.add_form.target)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| self.add_form.target.clone());
+                            format!("Backup {} to {}", src_name, tgt_name)
+                        } else {
+                            self.add_form.label.trim().replace(['<', '>', '"', '\'', '&'], "_")
+                        };
                         let config = WatchConfig {
-                            id: self.add_form.id.clone(),
-                            label: if self.add_form.label.is_empty() {
-                                self.add_form.id.clone()
-                            } else {
-                                self.add_form.label.clone()
-                            },
+                            id: uuid::Uuid::new_v4().to_string(),
+                            label,
                             source: PathBuf::from(&self.add_form.source),
                             target: TargetConfig::Local {
                                 path: PathBuf::from(&self.add_form.target),
