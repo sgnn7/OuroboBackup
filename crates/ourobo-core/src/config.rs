@@ -86,7 +86,10 @@ pub fn default_ipc_path() -> PathBuf {
 
 pub fn default_config_path() -> PathBuf {
     dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_else(|| {
+            eprintln!("WARNING: could not determine config directory, falling back to current directory");
+            PathBuf::from(".")
+        })
         .join("ourobo")
         .join("config.toml")
 }
@@ -255,7 +258,23 @@ username = "user"
     #[test]
     fn test_config_load_not_found() {
         let result = AppConfig::load(Path::new("/nonexistent/config.toml"));
-        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::OuroboError::ConfigNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn test_config_load_or_default_rejects_malformed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "this is [not valid { toml").unwrap();
+
+        let result = AppConfig::load_or_default(&path);
+        assert!(matches!(
+            result.unwrap_err(),
+            crate::OuroboError::TomlParse(_)
+        ));
     }
 
     #[test]

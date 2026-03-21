@@ -66,7 +66,14 @@ fn spawn_status_poller(tx: mpsc::Sender<TrayUpdate>) {
                         Ok(_) => TrayUpdate::Status("Connected".to_string()),
                         Err(e) => TrayUpdate::Error(format!("{e}")),
                     },
-                    Err(_) => TrayUpdate::Error("No daemon".to_string()),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if msg.contains("Connection refused") || msg.contains("No such file") {
+                            TrayUpdate::Error("No daemon".to_string())
+                        } else {
+                            TrayUpdate::Error(format!("Daemon error: {e}"))
+                        }
+                    }
                 };
                 if tx.send(update).is_err() {
                     return; // UI exited, stop polling
@@ -106,16 +113,23 @@ fn main() {
 
         match event {
             Event::NewEvents(StartCause::Init) => {
-                tray_icon = Some(
-                    TrayIconBuilder::new()
-                        .with_icon(build_icon())
-                        .with_menu(Box::new(menu.clone()))
-                        .with_tooltip("OuroboBackup")
-                        .with_title("OB")
-                        .with_menu_on_left_click(true)
-                        .build()
-                        .expect("failed to create tray icon"),
-                );
+                match TrayIconBuilder::new()
+                    .with_icon(build_icon())
+                    .with_menu(Box::new(menu.clone()))
+                    .with_tooltip("OuroboBackup")
+                    .with_title("OB")
+                    .with_menu_on_left_click(true)
+                    .build()
+                {
+                    Ok(icon) => {
+                        tray_icon = Some(icon);
+                    }
+                    Err(e) => {
+                        eprintln!("failed to create tray icon: {e}");
+                        *control_flow = ControlFlow::Exit;
+                        return;
+                    }
+                }
             }
             Event::NewEvents(_) => {
                 let menu_rx = MenuEvent::receiver();
@@ -133,10 +147,12 @@ fn main() {
                             Some(path) => {
                                 if let Err(e) = std::process::Command::new(&path).spawn() {
                                     eprintln!("failed to launch GUI at {}: {e}", path.display());
+                                    status_item.set_text("GUI launch failed");
                                 }
                             }
                             None => {
                                 eprintln!("failed to resolve GUI path from current exe");
+                                status_item.set_text("GUI launch failed");
                             }
                         }
                     }
@@ -145,7 +161,9 @@ fn main() {
                 while let Ok(update) = update_rx.try_recv() {
                     match update {
                         TrayUpdate::Status(msg) => status_item.set_text(&msg),
-                        TrayUpdate::Error(msg) => status_item.set_text(&msg),
+                        TrayUpdate::Error(msg) => {
+                            status_item.set_text(&format!("⚠ {msg}"));
+                        }
                     }
                 }
             }

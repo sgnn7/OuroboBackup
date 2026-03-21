@@ -96,7 +96,7 @@ if ! "$DIR/ourobo-cli" ping >/dev/null 2>&1; then
     DAEMON_PID=$!
 
     # Wait for daemon to be ready (up to 5 seconds)
-    for i in $(seq 1 50); do
+    for _ in $(seq 1 50); do
         if "$DIR/ourobo-cli" ping >/dev/null 2>&1; then
             break
         fi
@@ -116,6 +116,8 @@ fi
 # Start tray icon in background (if present)
 if [ -x "$DIR/ourobo-tray" ]; then
     "$DIR/ourobo-tray" >> "$LOG_DIR/tray.log" 2>&1 &
+elif [ -f "$DIR/ourobo-tray" ]; then
+    echo "WARNING: ourobo-tray exists but is not executable" >> "$LOG_DIR/tray.log"
 fi
 
 # Launch GUI
@@ -126,21 +128,19 @@ chmod +x "$APP_MACOS/ourobo-launcher"
 # --- Copy binaries ---
 BINARIES=(ourobo-daemon ourobo-cli ourobo-gui ourobo-tray)
 for bin in "${BINARIES[@]}"; do
-    if [ -f "$PROJECT_ROOT/target/release/$bin" ]; then
-        cp "$PROJECT_ROOT/target/release/$bin" "$APP_MACOS/"
-        echo "    Bundled $bin"
-    else
-        echo "    Warning: $bin not found, skipping"
-    fi
-done
-
-# Verify required binaries are present
-for required in ourobo-daemon ourobo-cli ourobo-gui ourobo-tray ourobo-launcher; do
-    if [ ! -f "$APP_MACOS/$required" ]; then
-        echo "ERROR: Required binary $required is missing from app bundle"
+    if [ ! -f "$PROJECT_ROOT/target/release/$bin" ]; then
+        echo "ERROR: Required binary $bin not found in target/release/"
         exit 1
     fi
+    cp "$PROJECT_ROOT/target/release/$bin" "$APP_MACOS/"
+    echo "    Bundled $bin"
 done
+
+# Verify launcher is present
+if [ ! -f "$APP_MACOS/ourobo-launcher" ]; then
+    echo "ERROR: Launcher script is missing from app bundle"
+    exit 1
+fi
 
 # --- Copy resources ---
 cp "$PROJECT_ROOT/config.example.toml" "$APP_RESOURCES/"
@@ -156,7 +156,7 @@ import struct, zlib
 
 def create_png(size):
     def raw_data():
-        cx, cy, r = size//2, size//2, size//2 - 20
+        cx, cy, r = size//2, size//2, max(1, int(size * 0.4))
         rows = []
         for y in range(size):
             row = b'\\x00'
