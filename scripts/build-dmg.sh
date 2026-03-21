@@ -145,54 +145,27 @@ fi
 # --- Copy resources ---
 cp "$PROJECT_ROOT/config.example.toml" "$APP_RESOURCES/"
 
-# --- Generate app icon ---
-if [ ! -f "$APP_RESOURCES/AppIcon.icns" ]; then
+# --- Generate app icon from project source icon ---
+ICON_SOURCE="$PROJECT_ROOT/assets/icon_source.png"
+if [ ! -f "$APP_RESOURCES/AppIcon.icns" ] && [ -f "$ICON_SOURCE" ]; then
     ICON_DIR=$(mktemp -d)
     ICONSET="$ICON_DIR/AppIcon.iconset"
     mkdir -p "$ICONSET"
 
-    if ! python3 -c "
-import struct, zlib
+    for sz in 16 32 128 256 512; do
+        sips -z $sz $sz "$ICON_SOURCE" --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null 2>&1
+        sz2=$(( sz * 2 ))
+        sips -z $sz2 $sz2 "$ICON_SOURCE" --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null 2>&1
+    done
 
-def create_png(size):
-    def raw_data():
-        cx, cy, r = size//2, size//2, max(1, int(size * 0.4))
-        rows = []
-        for y in range(size):
-            row = b'\\x00'
-            for x in range(size):
-                dx, dy = x - cx, y - cy
-                if dx*dx + dy*dy <= r*r:
-                    row += b'\\x50\\xc8\\x50\\xff'
-                else:
-                    row += b'\\x00\\x00\\x00\\x00'
-            rows.append(row)
-        return b''.join(rows)
-
-    raw = raw_data()
-    def chunk(ctype, data):
-        c = ctype + data
-        return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
-
-    ihdr = struct.pack('>IIBBBBB', size, size, 8, 6, 0, 0, 0)
-    return (b'\\x89PNG\\r\\n\\x1a\\n' +
-            chunk(b'IHDR', ihdr) +
-            chunk(b'IDAT', zlib.compress(raw)) +
-            chunk(b'IEND', b''))
-
-for name, sz in [('icon_16x16.png',16),('icon_32x32.png',32),
-                  ('icon_128x128.png',128),('icon_256x256.png',256),
-                  ('icon_512x512.png',512)]:
-    with open('$ICONSET/' + name, 'wb') as f:
-        f.write(create_png(sz))
-    "; then
-        echo "    Warning: icon PNG generation failed (see error above), app will use default icon"
-    elif ! iconutil -c icns -o "$APP_RESOURCES/AppIcon.icns" "$ICONSET"; then
-        echo "    Warning: iconutil failed, app will use default icon"
+    if iconutil -c icns -o "$APP_RESOURCES/AppIcon.icns" "$ICONSET"; then
+        echo "    Generated AppIcon.icns from assets/icon_source.png"
     else
-        echo "    Generated AppIcon.icns"
+        echo "    Warning: iconutil failed, app will use default icon"
     fi
     rm -rf "$ICON_DIR"
+elif [ ! -f "$ICON_SOURCE" ]; then
+    echo "    Warning: assets/icon_source.png not found, app will use default icon"
 fi
 
 # --- Applications symlink ---
