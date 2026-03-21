@@ -15,6 +15,6 @@ async fn main() -> Result<()> {
     let config_path = ourobo_core::config::default_config_path();
     tracing::info!("loading config from {}", config_path.display());
 
-    let config = AppConfig::load(&config_path)?;
+    let config = AppConfig::load_or_default(&config_path)?;
     daemon::run(config).await
 }

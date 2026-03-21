@@ -104,6 +104,20 @@ impl AppConfig {
         Ok(config)
     }
 
+    /// Load config from path, or return defaults if the file doesn't exist.
+    /// Creates a default config file on first run.
+    pub fn load_or_default(path: &Path) -> crate::Result<Self> {
+        match Self::load(path) {
+            Ok(config) => Ok(config),
+            Err(crate::OuroboError::ConfigNotFound(_)) => {
+                let config = Self::default();
+                config.save(path)?;
+                Ok(config)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn save(&self, path: &Path) -> crate::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -242,6 +256,33 @@ username = "user"
     fn test_config_load_not_found() {
         let result = AppConfig::load(Path::new("/nonexistent/config.toml"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_load_or_default_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub/config.toml");
+        assert!(!path.exists());
+
+        let config = AppConfig::load_or_default(&path).unwrap();
+        assert_eq!(config, AppConfig::default());
+        assert!(path.exists());
+
+        // Second call loads the saved file
+        let config2 = AppConfig::load_or_default(&path).unwrap();
+        assert_eq!(config, config2);
+    }
+
+    #[test]
+    fn test_config_load_or_default_uses_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let custom = sample_config();
+        custom.save(&path).unwrap();
+
+        let loaded = AppConfig::load_or_default(&path).unwrap();
+        assert_eq!(loaded, custom);
     }
 
     #[test]
