@@ -40,4 +40,4 @@ Four crates in `crates/`:
 - **No unused code warnings**: Keep imports clean. Remove `BackupAction::Failed` and similar dead variants rather than leaving them.
 - **Update README.md** when adding features or changing usage.
 - **Stage changes but let the user commit.**
-- **Granular commits**: Prefer small, focused commits (one logical change per commit) over large bundled commits. For example, separate "add exclude filtering" from "add signal handling" from "add CLI tests".
+- **Granular commits**: One logical change per commit. Include related docs updates (README, PLAN.md) in the same commit as the code they describe. Only use separate commits for truly independent changes (e.g., "add exclude filtering" vs "add signal handling").
