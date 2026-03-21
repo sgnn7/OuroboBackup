@@ -133,13 +133,12 @@ Use `--socket PATH` or `OUROBO_SOCKET` env var to specify a custom daemon socket
 ## Packaging (macOS)
 
 ```bash
-# Build a .dmg containing all binaries, config example, and .app bundles
 ./scripts/build-dmg.sh
 ```
 
 Output: `target/OuroboBackup-0.1.0.dmg`
 
-The script builds release binaries, optionally creates `.app` bundles via `cargo-bundle` (install with `cargo install cargo-bundle`), and packages everything into a compressed DMG using `hdiutil`.
+The DMG is a drag-to-install installer containing `OuroboBackup.app` and an `Applications` symlink. The `.app` bundle includes all binaries (daemon, CLI, GUI, tray) and a launcher script that starts the daemon automatically when opening the app. No external dependencies required — uses `hdiutil` (built-in) and `iconutil` for icon generation.
 
 ## Development
 
