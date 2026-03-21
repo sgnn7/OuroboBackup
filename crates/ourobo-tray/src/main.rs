@@ -18,24 +18,80 @@ enum TrayUpdate {
 }
 
 fn build_icon() -> Icon {
+    // 22x22 monochrome outline of a storage safe for the menu bar.
+    // macOS menu bar icons should be simple, high-contrast outlines.
     let size = 22u32;
     let mut rgba = vec![0u8; (size * size * 4) as usize];
-    let center = size as f32 / 2.0;
-    let radius = 8.0f32;
+
+    let set = |rgba: &mut Vec<u8>, x: u32, y: u32, a: u8| {
+        if x < size && y < size {
+            let idx = ((y * size + x) * 4) as usize;
+            // White with variable alpha — macOS template images use white;
+            // the system inverts automatically for light/dark menu bars
+            rgba[idx] = 255;
+            rgba[idx + 1] = 255;
+            rgba[idx + 2] = 255;
+            rgba[idx + 3] = a;
+        }
+    };
+
+    // Safe body: rounded rectangle outline (3,2) to (18,19), 2px thick
+    let x0: u32 = 3;
+    let y0: u32 = 2;
+    let x1: u32 = 18;
+    let y1: u32 = 19;
+    let a = 255u8;
+
+    // Top and bottom edges (2px thick)
+    for x in x0..=x1 {
+        set(&mut rgba, x, y0, a);
+        set(&mut rgba, x, y0 + 1, a);
+        set(&mut rgba, x, y1, a);
+        set(&mut rgba, x, y1 - 1, a);
+    }
+    // Left and right edges (2px thick)
+    for y in y0..=y1 {
+        set(&mut rgba, x0, y, a);
+        set(&mut rgba, x0 + 1, y, a);
+        set(&mut rgba, x1, y, a);
+        set(&mut rgba, x1 - 1, y, a);
+    }
+
+    // Dial circle in center (radius ~3.5px, thicker ring)
+    let cx = 10.5f32;
+    let cy = 10.5f32;
     for y in 0..size {
         for x in 0..size {
-            let dx = x as f32 - center;
-            let dy = y as f32 - center;
+            let dx = x as f32 + 0.5 - cx;
+            let dy = y as f32 + 0.5 - cy;
             let dist = (dx * dx + dy * dy).sqrt();
-            let idx = ((y * size + x) * 4) as usize;
-            if dist <= radius {
-                rgba[idx] = 80;
-                rgba[idx + 1] = 200;
-                rgba[idx + 2] = 80;
-                rgba[idx + 3] = 255;
+            // Outer ring of dial (thicker)
+            if (dist - 3.5).abs() < 1.0 {
+                set(&mut rgba, x, y, a);
+            }
+            // Inner dot (larger)
+            if dist < 1.5 {
+                set(&mut rgba, x, y, a);
             }
         }
     }
+
+    // Handle on right side (2px wide vertical bar)
+    for y in 8..=13 {
+        set(&mut rgba, 16, y, a);
+        set(&mut rgba, 17, y, a);
+    }
+
+    // Hinges on left side (2px wide)
+    for x in 4..=5 {
+        for y in 5..=7 {
+            set(&mut rgba, x, y, a);
+        }
+        for y in 14..=16 {
+            set(&mut rgba, x, y, a);
+        }
+    }
+
     Icon::from_rgba(rgba, size, size).expect("failed to create icon")
 }
 
@@ -117,11 +173,11 @@ fn main() {
                     .with_icon(build_icon())
                     .with_menu(Box::new(menu.clone()))
                     .with_tooltip("OuroboBackup")
-                    .with_title("OB")
                     .with_menu_on_left_click(true)
                     .build()
                 {
                     Ok(icon) => {
+                        icon.set_icon_as_template(true);
                         tray_icon = Some(icon);
                     }
                     Err(e) => {
