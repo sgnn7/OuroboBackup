@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# Build a macOS installer DMG with drag-to-install layout.
+# Build a macOS installer DMG with drag-to-install UX.
 #
-# The DMG contains:
-#   - OuroboBackup.app (GUI with daemon, CLI, and tray bundled inside)
-#   - Applications symlink (for drag-to-install)
+# Opens as a styled Finder window with the app on the left,
+# an arrow, and an Applications shortcut on the right.
 #
 set -euo pipefail
 
@@ -13,11 +12,35 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSION=$(grep '^version' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
 DMG_NAME="OuroboBackup-${VERSION}"
 STAGING_DIR="$PROJECT_ROOT/target/dmg-staging"
+DMG_RW="$PROJECT_ROOT/target/${DMG_NAME}-rw.dmg"
 DMG_OUTPUT="$PROJECT_ROOT/target/${DMG_NAME}.dmg"
+VOLUME_NAME="$DMG_NAME"
 APP_DIR="$STAGING_DIR/OuroboBackup.app"
 APP_CONTENTS="$APP_DIR/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
+
+WIN_W=540
+WIN_H=380
+ICON_SIZE=128
+
+# Pre-compute icon positions for AppleScript
+APP_X=$(( WIN_W / 4 ))
+APP_Y=$(( WIN_H / 2 - 20 ))
+APPS_X=$(( WIN_W * 3 / 4 ))
+
+# Track mount state for cleanup
+DMG_DEV=""
+
+cleanup() {
+    if [ -n "$DMG_DEV" ]; then
+        echo "==> Cleanup: detaching $DMG_DEV..."
+        hdiutil detach "$DMG_DEV" -force 2>&1 || echo "    Warning: failed to detach $DMG_DEV during cleanup"
+    fi
+    rm -f "$DMG_RW"
+    rm -rf "$STAGING_DIR"
+}
+trap cleanup EXIT
 
 echo "==> Building release binaries..."
 cargo build --workspace --release
@@ -61,15 +84,38 @@ cat > "$APP_CONTENTS/Info.plist" <<PLIST
 PLIST
 
 # --- Launcher script ---
-# Starts the daemon (if not running) and the GUI
 cat > "$APP_MACOS/ourobo-launcher" <<'LAUNCHER'
 #!/usr/bin/env bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_DIR="$HOME/.ourobo"
+mkdir -p "$LOG_DIR"
 
 # Start daemon in background if not already running
 if ! "$DIR/ourobo-cli" ping >/dev/null 2>&1; then
-    "$DIR/ourobo-daemon" &
-    sleep 1
+    "$DIR/ourobo-daemon" >> "$LOG_DIR/daemon.log" 2>&1 &
+    DAEMON_PID=$!
+
+    # Wait for daemon to be ready (up to 5 seconds)
+    for i in $(seq 1 50); do
+        if "$DIR/ourobo-cli" ping >/dev/null 2>&1; then
+            break
+        fi
+        # Fast-fail if daemon process already exited
+        if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    if ! "$DIR/ourobo-cli" ping >/dev/null 2>&1; then
+        osascript -e 'display alert "OuroboBackup" message "Daemon failed to start. Check ~/.ourobo/daemon.log for details." as warning' 2>/dev/null \
+            || echo "WARNING: Daemon failed to start. Check ~/.ourobo/daemon.log" >&2
+    fi
+fi
+
+# Start tray icon in background (if present)
+if [ -x "$DIR/ourobo-tray" ]; then
+    "$DIR/ourobo-tray" >> "$LOG_DIR/tray.log" 2>&1 &
 fi
 
 # Launch GUI
@@ -77,7 +123,7 @@ exec "$DIR/ourobo-gui"
 LAUNCHER
 chmod +x "$APP_MACOS/ourobo-launcher"
 
-# --- Copy binaries into app bundle ---
+# --- Copy binaries ---
 BINARIES=(ourobo-daemon ourobo-cli ourobo-gui ourobo-tray)
 for bin in "${BINARIES[@]}"; do
     if [ -f "$PROJECT_ROOT/target/release/$bin" ]; then
@@ -88,18 +134,24 @@ for bin in "${BINARIES[@]}"; do
     fi
 done
 
+# Verify required binaries are present
+for required in ourobo-daemon ourobo-cli ourobo-gui ourobo-tray ourobo-launcher; do
+    if [ ! -f "$APP_MACOS/$required" ]; then
+        echo "ERROR: Required binary $required is missing from app bundle"
+        exit 1
+    fi
+done
+
 # --- Copy resources ---
 cp "$PROJECT_ROOT/config.example.toml" "$APP_RESOURCES/"
 
-# --- Generate app icon (simple green circle) ---
-# Uses built-in sips if no icon file exists
+# --- Generate app icon ---
 if [ ! -f "$APP_RESOURCES/AppIcon.icns" ]; then
     ICON_DIR=$(mktemp -d)
     ICONSET="$ICON_DIR/AppIcon.iconset"
     mkdir -p "$ICONSET"
 
-    # Create a simple 512x512 green circle PNG using Python (available on macOS)
-    python3 -c "
+    if ! python3 -c "
 import struct, zlib
 
 def create_png(size):
@@ -107,13 +159,13 @@ def create_png(size):
         cx, cy, r = size//2, size//2, size//2 - 20
         rows = []
         for y in range(size):
-            row = b'\\x00'  # filter byte
+            row = b'\\x00'
             for x in range(size):
                 dx, dy = x - cx, y - cy
                 if dx*dx + dy*dy <= r*r:
-                    row += b'\\x50\\xc8\\x50\\xff'  # green
+                    row += b'\\x50\\xc8\\x50\\xff'
                 else:
-                    row += b'\\x00\\x00\\x00\\x00'  # transparent
+                    row += b'\\x00\\x00\\x00\\x00'
             rows.append(row)
         return b''.join(rows)
 
@@ -133,32 +185,178 @@ for name, sz in [('icon_16x16.png',16),('icon_32x32.png',32),
                   ('icon_512x512.png',512)]:
     with open('$ICONSET/' + name, 'wb') as f:
         f.write(create_png(sz))
-    " 2>/dev/null
-
-    if [ -d "$ICONSET" ] && ls "$ICONSET"/*.png >/dev/null 2>&1; then
-        iconutil -c icns -o "$APP_RESOURCES/AppIcon.icns" "$ICONSET" 2>/dev/null && \
-            echo "    Generated AppIcon.icns" || \
-            echo "    Warning: iconutil failed, app will use default icon"
+    "; then
+        echo "    Warning: icon PNG generation failed (see error above), app will use default icon"
+    elif ! iconutil -c icns -o "$APP_RESOURCES/AppIcon.icns" "$ICONSET"; then
+        echo "    Warning: iconutil failed, app will use default icon"
+    else
+        echo "    Generated AppIcon.icns"
     fi
     rm -rf "$ICON_DIR"
 fi
 
-# --- Applications symlink for drag-to-install ---
+# --- Applications symlink ---
 ln -sf /Applications "$STAGING_DIR/Applications"
 
-# --- Create DMG ---
-rm -f "$DMG_OUTPUT"
+# --- Generate background image with arrow ---
+echo "==> Generating installer background..."
+BG_DIR="$STAGING_DIR/.background"
+mkdir -p "$BG_DIR"
 
-echo "==> Creating DMG..."
+if ! python3 -c "
+import struct, zlib
+
+W, H = ${WIN_W} * 2, ${WIN_H} * 2  # retina
+
+def create_png():
+    rows = []
+    ax1, ax2 = int(W * 0.33), int(W * 0.67)
+    ay = H // 2 + 40
+    arrow_w = 6
+    head_len = 60
+    head_w = 30
+
+    for y in range(H):
+        row = b'\\x00'
+        for x in range(W):
+            r, g, b, a = 0xf5, 0xf5, 0xf5, 0xff
+
+            # Arrow shaft
+            if ax1 <= x <= ax2 - head_len and abs(y - ay) <= arrow_w:
+                r, g, b = 0x88, 0x88, 0x88
+
+            # Arrow head
+            tip_x = ax2
+            base_x = ax2 - head_len
+            if base_x <= x <= tip_x:
+                progress = (x - base_x) / head_len
+                half_h = head_w * (1.0 - progress)
+                if abs(y - ay) <= half_h:
+                    r, g, b = 0x88, 0x88, 0x88
+
+            row += bytes([r, g, b, a])
+        rows.append(row)
+
+    raw = b''.join(rows)
+    def chunk(ctype, data):
+        c = ctype + data
+        return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+
+    ihdr = struct.pack('>IIBBBBB', W, H, 8, 6, 0, 0, 0)
+    return (b'\\x89PNG\\r\\n\\x1a\\n' +
+            chunk(b'IHDR', ihdr) +
+            chunk(b'IDAT', zlib.compress(raw, 1)) +
+            chunk(b'IEND', b''))
+
+with open('${BG_DIR}/background.png', 'wb') as f:
+    f.write(create_png())
+"; then
+    echo "    Warning: background generation failed (see error above), continuing without background"
+else
+    echo "    Generated background.png"
+fi
+
+# --- Volume icon ---
+if [ -f "$APP_RESOURCES/AppIcon.icns" ]; then
+    cp "$APP_RESOURCES/AppIcon.icns" "$STAGING_DIR/.VolumeIcon.icns"
+fi
+
+# --- Calculate DMG size ---
+STAGING_SIZE_MB=$(du -sm "$STAGING_DIR" | awk '{print $1}')
+DMG_SIZE_MB=$(( STAGING_SIZE_MB + 10 ))  # headroom for filesystem overhead
+echo "==> Staging size: ${STAGING_SIZE_MB}MB, DMG size: ${DMG_SIZE_MB}MB"
+
+# --- Create DMG ---
+rm -f "$DMG_OUTPUT" "$DMG_RW"
+
+echo "==> Creating writable DMG..."
 hdiutil create \
     -srcfolder "$STAGING_DIR" \
-    -volname "$DMG_NAME" \
+    -volname "$VOLUME_NAME" \
     -fs HFS+ \
-    -format UDZO \
-    -o "$DMG_OUTPUT"
+    -format UDRW \
+    -size "${DMG_SIZE_MB}m" \
+    -ov \
+    -o "${DMG_RW%.dmg}"
 
-# Clean up
+# Detach any stale mount with this volume name
+if mount | grep -q "/Volumes/$VOLUME_NAME"; then
+    hdiutil detach "/Volumes/$VOLUME_NAME" || {
+        echo "ERROR: Cannot detach existing mount at /Volumes/$VOLUME_NAME"
+        exit 1
+    }
+fi
+
+# Mount writable DMG, capture device for reliable detach
+ATTACH_OUT=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_RW")
+DMG_DEV=$(echo "$ATTACH_OUT" | head -1 | awk '{print $1}')
+MOUNT_DIR=$(echo "$ATTACH_OUT" | grep Apple_HFS | sed 's|.*Apple_HFS[[:space:]]*||')
+
+if [ -z "$DMG_DEV" ] || [ -z "$MOUNT_DIR" ]; then
+    echo "ERROR: Failed to parse hdiutil attach output:"
+    echo "$ATTACH_OUT"
+    exit 1
+fi
+sleep 1
+
+# Set custom volume icon
+if command -v SetFile >/dev/null 2>&1; then
+    if [ -f "$MOUNT_DIR/.VolumeIcon.icns" ]; then
+        SetFile -a C "$MOUNT_DIR"
+    fi
+else
+    echo "    Note: SetFile not found (install Xcode CLT); volume icon may not display"
+fi
+
+# Try AppleScript for window styling (works if Finder automation is allowed)
+echo "==> Styling DMG window..."
+osascript <<APPLESCRIPT 2>&1 || echo "    Note: Finder styling skipped (no automation permission). DMG will use default icon view."
+tell application "Finder"
+    tell disk "${VOLUME_NAME}"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set bounds of container window to {100, 100, $((100 + WIN_W)), $((100 + WIN_H))}
+
+        set theViewOptions to icon view options of container window
+        set arrangement of theViewOptions to not arranged
+        set icon size of theViewOptions to ${ICON_SIZE}
+        set background picture of theViewOptions to file ".background:background.png"
+
+        set position of item "OuroboBackup.app" of container window to {${APP_X}, ${APP_Y}}
+        set position of item "Applications" of container window to {${APPS_X}, ${APP_Y}}
+
+        close
+        open
+        update without registering applications
+        delay 1
+        close
+    end tell
+end tell
+APPLESCRIPT
+
+sync
+hdiutil detach "$DMG_DEV" || {
+    echo "    Warning: clean detach failed, retrying with -force..."
+    sleep 2
+    hdiutil detach "$DMG_DEV" -force
+}
+DMG_DEV=""  # cleared so trap doesn't double-detach
+
+# Convert to compressed read-only
+echo "==> Compressing DMG..."
+hdiutil convert "$DMG_RW" \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    -ov \
+    -o "${DMG_OUTPUT%.dmg}"
+
+rm -f "$DMG_RW"
 rm -rf "$STAGING_DIR"
+
+# Disable trap since we cleaned up successfully
+trap - EXIT
 
 echo "==> Done: $DMG_OUTPUT"
 echo "    Size: $(du -h "$DMG_OUTPUT" | cut -f1)"
