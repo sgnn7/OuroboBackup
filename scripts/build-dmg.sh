@@ -60,7 +60,7 @@ cat > "$APP_CONTENTS/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key>
     <string>OuroboBackup</string>
     <key>CFBundleIdentifier</key>
-    <string>com.ourobo.backup</string>
+    <string>org.sgnn7.ourobobackup</string>
     <key>CFBundleVersion</key>
     <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>

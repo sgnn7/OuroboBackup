@@ -5,7 +5,7 @@ edition.workspace = true
 
 [package.metadata.bundle]
 name = "OuroboBackup Tray"
-identifier = "com.ourobo.tray"
+identifier = "org.sgnn7.ourobobackup.tray"
 category = "public.app-category.utilities"
 short_description = "OuroboBackup menu bar icon"
 osx_minimum_system_version = "10.15"
