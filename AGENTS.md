@@ -8,19 +8,21 @@ OuroboBackup is a cross-platform file backup tool written in Rust. It watches di
 
 ```bash
 cargo build --workspace       # Build everything
-cargo test --workspace        # Run all tests (38 unit + integration tests)
+cargo test --workspace        # Run all tests (57 unit + integration tests)
 cargo test -p ourobo-core     # Run core library tests only
 cargo check --workspace       # Type-check without building
+./scripts/build-dmg.sh        # Build macOS installer DMG
 ```
 
 ## Workspace Structure
 
-Four crates in `crates/`:
+Five crates in `crates/`:
 
 - **ourobo-core** — Shared library. All domain logic lives here: config, error types, backend trait + local filesystem impl, strategy trait + copy-on-change impl, file watcher, IPC protocol/client/server, backup engine.
-- **ourobo-daemon** — Background daemon binary. Loads config, starts engine, serves IPC.
+- **ourobo-daemon** — Background daemon binary. Loads config (or creates defaults), starts engine, serves IPC.
 - **ourobo-cli** — CLI thin client. Sends IPC commands to daemon via Unix socket.
 - **ourobo-gui** — egui-based GUI thin client. Connects to daemon for status/control.
+- **ourobo-tray** — macOS menu bar tray icon. Uses `tray-icon` + `tao` for cross-platform event loop. Polls daemon status via IPC.
 
 ## Key Architectural Patterns
 
@@ -39,5 +41,7 @@ Four crates in `crates/`:
 - **Platform gating**: Use `#[cfg(unix)]` / `#[cfg(windows)]` for IPC transport. Windows returns explicit "not yet supported" errors.
 - **No unused code warnings**: Keep imports clean. Remove `BackupAction::Failed` and similar dead variants rather than leaving them.
 - **Update README.md** when adding features or changing usage.
-- **Stage changes but let the user commit.**
-- **Granular commits**: Prefer small, focused commits (one logical change per commit) over large bundled commits. For example, separate "add exclude filtering" from "add signal handling" from "add CLI tests".
+- **Stage changes but let the user commit.** Never run `git commit` directly. Never add Co-Authored-By lines.
+- **Granular commits**: One logical change per commit. Include related docs updates (README, PLAN.md) in the same commit as the code they describe. Only use separate commits for truly independent changes (e.g., "add exclude filtering" vs "add signal handling").
+- **Commit messages**: Explain *why* the change was made, not just how. The diff already shows how.
+- **Packaging**: `./scripts/build-dmg.sh` builds a macOS drag-to-install DMG. The `.app` bundle launcher starts daemon, tray, and GUI together.

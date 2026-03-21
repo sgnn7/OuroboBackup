@@ -37,10 +37,10 @@ Currently implements **copy-on-change**: files are copied to the target immediat
 # Build all crates
 cargo build --workspace
 
-# Run tests (55 tests)
+# Run tests (57 tests)
 cargo test --workspace
 
-# Start the daemon (requires config at ~/.config/ourobo/config.toml)
+# Start the daemon (creates default config on first run)
 cargo run -p ourobo-daemon
 
 # CLI usage
@@ -130,10 +130,20 @@ Watches support glob-based exclude patterns. Patterns are matched against both t
 
 Use `--socket PATH` or `OUROBO_SOCKET` env var to specify a custom daemon socket path.
 
+## Packaging (macOS)
+
+```bash
+./scripts/build-dmg.sh
+```
+
+Output: `target/OuroboBackup-0.1.0.dmg`
+
+The DMG is a drag-to-install installer containing `OuroboBackup.app` and an `Applications` symlink. The `.app` bundle includes all binaries (daemon, CLI, GUI, tray) and a launcher that starts daemon, tray, and GUI together on launch. No external dependencies required — uses `hdiutil` (built-in) and `iconutil` for icon generation.
+
 ## Development
 
 ```bash
-# Run all tests (55 across workspace)
+# Run all tests (57 across workspace)
 cargo test --workspace
 
 # Run tests for a specific crate

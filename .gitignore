@@ -7,3 +7,5 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 *.log
+.claude/logs/
+.claude/settings.local.json
