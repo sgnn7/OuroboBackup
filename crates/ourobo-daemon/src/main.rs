@@ -16,5 +16,5 @@ async fn main() -> Result<()> {
     tracing::info!("loading config from {}", config_path.display());
 
     let config = AppConfig::load_or_default(&config_path)?;
-    daemon::run(config).await
+    daemon::run(config, config_path).await
 }
