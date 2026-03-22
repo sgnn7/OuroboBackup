@@ -18,3 +18,4 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 rfd = { workspace = true }
 uuid = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
