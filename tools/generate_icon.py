@@ -73,64 +73,65 @@ def draw_safe(ctx, cx, cy, size):
     ctx.fill()
     ctx.restore()
 
-    # Safe body — white with blue border
+    # Safe body — white with heavy blue border
     ctx.set_source_rgb(1, 1, 1)
     _rounded_rect(ctx, x, y, w, h, corner)
     ctx.fill_preserve()
-    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.6)
-    ctx.set_line_width(3.5)
+    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.95)
+    ctx.set_line_width(12)
     ctx.stroke()
 
     # Inner border (recessed panel look)
-    margin = size * 0.025
-    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.15)
+    margin = size * 0.035
+    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.35)
+    ctx.set_line_width(5)
     _rounded_rect(ctx, x + margin, y + margin, w - 2 * margin, h - 2 * margin, corner * 0.6)
     ctx.stroke()
 
     # Dial/combination lock circle in center
-    dial_r = size * 0.065
-    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.12)
+    dial_r = size * 0.08
+    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.18)
     ctx.arc(cx, cy, dial_r, 0, 2 * math.pi)
     ctx.fill()
-    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.5)
-    ctx.set_line_width(2.5)
+    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.85)
+    ctx.set_line_width(6)
     ctx.arc(cx, cy, dial_r, 0, 2 * math.pi)
     ctx.stroke()
 
     # Inner dial circle
-    inner_r = dial_r * 0.45
-    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.6)
+    inner_r = dial_r * 0.38
+    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.85)
     ctx.arc(cx, cy, inner_r, 0, 2 * math.pi)
     ctx.fill()
 
     # Dial tick marks
-    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.5)
-    ctx.set_line_width(2)
+    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.8)
+    ctx.set_line_width(4.5)
     for i in range(12):
         angle = i * math.pi / 6
-        tick_inner = dial_r * 0.7
-        tick_outer = dial_r * 0.95
+        tick_inner = dial_r * 0.6
+        tick_outer = dial_r * 0.88
         ctx.move_to(cx + math.cos(angle) * tick_inner, cy + math.sin(angle) * tick_inner)
         ctx.line_to(cx + math.cos(angle) * tick_outer, cy + math.sin(angle) * tick_outer)
         ctx.stroke()
 
     # Handle on the right side
-    handle_x = x + w - size * 0.045
-    handle_y_top = cy - size * 0.055
-    handle_y_bot = cy + size * 0.055
-    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.55)
-    ctx.set_line_width(size * 0.018)
+    handle_x = x + w - size * 0.035
+    handle_y_top = cy - size * 0.075
+    handle_y_bot = cy + size * 0.075
+    ctx.set_source_rgba(0.10, 0.40, 0.85, 0.9)
+    ctx.set_line_width(size * 0.035)
     ctx.set_line_cap(cairo.LINE_CAP_ROUND)
     ctx.move_to(handle_x, handle_y_top)
     ctx.line_to(handle_x, handle_y_bot)
     ctx.stroke()
 
     # Hinges on the left side
-    hinge_x = x + size * 0.015
+    hinge_x = x + size * 0.008
     for hy_offset in [-h * 0.28, h * 0.28]:
         hy = cy + hy_offset
-        ctx.set_source_rgba(0.10, 0.40, 0.85, 0.4)
-        _rounded_rect(ctx, hinge_x, hy - size * 0.015, size * 0.02, size * 0.03, size * 0.004)
+        ctx.set_source_rgba(0.10, 0.40, 0.85, 0.75)
+        _rounded_rect(ctx, hinge_x, hy - size * 0.025, size * 0.035, size * 0.05, size * 0.008)
         ctx.fill()
 
 
