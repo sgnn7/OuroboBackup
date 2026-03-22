@@ -7,18 +7,39 @@ use ourobo_core::ipc::{
     DaemonStatus, IpcCommand, IpcResponse, ResponseData, WatchStatus,
 };
 use ourobo_core::strategy::copy_on_change::CopyOnChange;
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 
-pub async fn run(config: AppConfig) -> Result<()> {
-    let engine = Arc::new(Mutex::new(BackupEngine::new(Arc::new(CopyOnChange))));
+struct DaemonState {
+    engine: BackupEngine,
+    config: AppConfig,
+    config_path: PathBuf,
+}
+
+impl DaemonState {
+    fn save_config(&self) -> std::result::Result<(), String> {
+        self.config
+            .save(&self.config_path)
+            .map_err(|e| format!("failed to save config: {e}"))
+    }
+}
+
+pub async fn run(config: AppConfig, config_path: PathBuf) -> Result<()> {
+    let state = Arc::new(Mutex::new(DaemonState {
+        engine: BackupEngine::new(Arc::new(CopyOnChange)),
+        config,
+        config_path,
+    }));
     let start_time = std::time::Instant::now();
 
     // Add configured watches
     {
-        let mut eng = engine.lock().await;
-        for watch in &config.watches {
+        let mut st = state.lock().await;
+        let watches: Vec<_> = st.config.watches.clone();
+        let debounce = st.config.daemon.debounce_ms;
+        for watch in &watches {
             if !watch.enabled {
                 continue;
             }
@@ -29,26 +50,25 @@ pub async fn run(config: AppConfig) -> Result<()> {
                     continue;
                 }
             };
-            match eng.add_watch(watch.clone(), backend, config.daemon.debounce_ms) {
+            match st.engine.add_watch(watch.clone(), backend, debounce) {
                 Ok(()) => tracing::info!("watching: {} ({})", watch.label, watch.source.display()),
                 Err(e) => tracing::error!("failed to add watch {}: {e}", watch.id),
             }
         }
     }
 
-    let server = IpcServer::bind(&config.daemon.ipc_path).await?;
-    let ipc_path = config.daemon.ipc_path.clone();
+    let ipc_path = state.lock().await.config.daemon.ipc_path.clone();
+    let server = IpcServer::bind(&ipc_path).await?;
     tracing::info!("daemon listening on {}", ipc_path.display());
 
-    let engine_for_handler = engine.clone();
-    let debounce_ms = config.daemon.debounce_ms;
+    let state_for_handler = state.clone();
     let shutdown_notify = Arc::new(Notify::new());
     let shutdown_signal = shutdown_notify.clone();
 
     let server_handle = tokio::spawn(async move {
         server
             .run(move |cmd| {
-                let engine = engine_for_handler.clone();
+                let state = state_for_handler.clone();
                 let uptime = start_time.elapsed().as_secs();
                 let shutdown = shutdown_signal.clone();
                 async move {
@@ -56,23 +76,23 @@ pub async fn run(config: AppConfig) -> Result<()> {
                         IpcCommand::Ping => IpcResponse::Ok(ResponseData::Pong),
 
                         IpcCommand::Status => {
-                            let eng = engine.lock().await;
-                            let watches = eng.list_watches();
+                            let st = state.lock().await;
+                            let watches = st.engine.list_watches();
                             let total: u64 = watches
                                 .iter()
                                 .map(|(_, s)| s.files_backed_up.load(Ordering::Relaxed))
                                 .sum();
                             IpcResponse::Ok(ResponseData::DaemonStatus(DaemonStatus {
                                 uptime_secs: uptime,
-                                active_watches: eng.watch_count(),
+                                active_watches: st.engine.watch_count(),
                                 total_files_backed_up: total,
                                 last_error: None,
                             }))
                         }
 
                         IpcCommand::ListWatches => {
-                            let eng = engine.lock().await;
-                            let watches: Vec<WatchStatus> = eng
+                            let st = state.lock().await;
+                            let watches: Vec<WatchStatus> = st.engine
                                 .list_watches()
                                 .into_iter()
                                 .map(|(config, stats)| WatchStatus {
@@ -87,7 +107,7 @@ pub async fn run(config: AppConfig) -> Result<()> {
                         }
 
                         IpcCommand::AddWatch(watch_config) => {
-                            let mut eng = engine.lock().await;
+                            let mut st = state.lock().await;
                             let id = watch_config.id.clone();
                             let backend: Arc<dyn ourobo_core::backend::BackupBackend> =
                                 match &watch_config.target {
@@ -100,8 +120,20 @@ pub async fn run(config: AppConfig) -> Result<()> {
                                         };
                                     }
                                 };
-                            match eng.add_watch(watch_config, backend, debounce_ms) {
-                                Ok(()) => IpcResponse::Ok(ResponseData::WatchAdded { id }),
+                            let debounce = st.config.daemon.debounce_ms;
+                            match st.engine.add_watch(watch_config.clone(), backend, debounce) {
+                                Ok(()) => {
+                                    // Deduplicate: replace if ID already exists (e.g. disabled watch)
+                                    st.config.watches.retain(|w| w.id != watch_config.id);
+                                    st.config.watches.push(watch_config);
+                                    if let Err(e) = st.save_config() {
+                                        // Roll back in-memory state
+                                        st.config.watches.retain(|w| w.id != id);
+                                        let _ = st.engine.remove_watch(&id);
+                                        return IpcResponse::Error { message: e };
+                                    }
+                                    IpcResponse::Ok(ResponseData::WatchAdded { id })
+                                }
                                 Err(e) => IpcResponse::Error {
                                     message: e.to_string(),
                                 },
@@ -109,9 +141,25 @@ pub async fn run(config: AppConfig) -> Result<()> {
                         }
 
                         IpcCommand::RemoveWatch { id } => {
-                            let mut eng = engine.lock().await;
-                            match eng.remove_watch(&id) {
-                                Ok(()) => IpcResponse::Ok(ResponseData::WatchRemoved { id }),
+                            let mut st = state.lock().await;
+                            // Save the watch config before removing, for rollback
+                            let removed_watch = st.config.watches
+                                .iter()
+                                .find(|w| w.id == id)
+                                .cloned();
+                            match st.engine.remove_watch(&id) {
+                                Ok(()) => {
+                                    st.config.watches.retain(|w| w.id != id);
+                                    if let Err(e) = st.save_config() {
+                                        // Roll back: re-add to config (engine watch is gone,
+                                        // but it will be restored on next daemon restart)
+                                        if let Some(watch) = removed_watch {
+                                            st.config.watches.push(watch);
+                                        }
+                                        return IpcResponse::Error { message: e };
+                                    }
+                                    IpcResponse::Ok(ResponseData::WatchRemoved { id })
+                                }
                                 Err(e) => IpcResponse::Error {
                                     message: e.to_string(),
                                 },

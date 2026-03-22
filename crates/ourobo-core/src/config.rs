@@ -126,7 +126,11 @@ impl AppConfig {
             std::fs::create_dir_all(parent)?;
         }
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
+        // Atomic write: write to temp file then rename, so an interrupted
+        // write can't leave a truncated/corrupt config file
+        let tmp_path = path.with_extension("toml.tmp");
+        std::fs::write(&tmp_path, &content)?;
+        std::fs::rename(&tmp_path, path)?;
         Ok(())
     }
 }
@@ -302,6 +306,83 @@ username = "user"
 
         let loaded = AppConfig::load_or_default(&path).unwrap();
         assert_eq!(loaded, custom);
+    }
+
+    #[test]
+    fn test_save_does_not_leave_tmp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let config = sample_config();
+        config.save(&path).unwrap();
+
+        assert!(path.exists());
+        assert!(!dir.path().join("config.toml.tmp").exists());
+    }
+
+    #[test]
+    fn test_save_preserves_original_on_serialization_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        // Save initial config
+        let config1 = sample_config();
+        config1.save(&path).unwrap();
+        let content1 = std::fs::read_to_string(&path).unwrap();
+
+        // Save a different config
+        let mut config2 = AppConfig::default();
+        config2.watches.push(WatchConfig {
+            id: "new".to_string(),
+            label: "New Watch".to_string(),
+            source: PathBuf::from("/new/source"),
+            target: TargetConfig::Local {
+                path: PathBuf::from("/new/target"),
+            },
+            exclude: vec![],
+            enabled: true,
+        });
+        config2.save(&path).unwrap();
+        let content2 = std::fs::read_to_string(&path).unwrap();
+
+        // Contents should differ
+        assert_ne!(content1, content2);
+        // And the new config should load correctly
+        let loaded = AppConfig::load(&path).unwrap();
+        assert_eq!(loaded, config2);
+    }
+
+    #[test]
+    fn test_save_with_watch_add_remove_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut config = AppConfig::default();
+        config.save(&path).unwrap();
+
+        // Add a watch
+        config.watches.push(WatchConfig {
+            id: "w1".to_string(),
+            label: "Watch 1".to_string(),
+            source: PathBuf::from("/src1"),
+            target: TargetConfig::Local {
+                path: PathBuf::from("/dst1"),
+            },
+            exclude: vec!["*.tmp".to_string()],
+            enabled: true,
+        });
+        config.save(&path).unwrap();
+
+        let loaded = AppConfig::load(&path).unwrap();
+        assert_eq!(loaded.watches.len(), 1);
+        assert_eq!(loaded.watches[0].id, "w1");
+
+        // Remove the watch
+        config.watches.retain(|w| w.id != "w1");
+        config.save(&path).unwrap();
+
+        let loaded = AppConfig::load(&path).unwrap();
+        assert!(loaded.watches.is_empty());
     }
 
     #[test]
